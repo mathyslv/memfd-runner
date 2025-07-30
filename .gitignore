@@ -3,7 +3,7 @@
 !examples/**
 !tests/
 !tests/**
-!LICENSE.md
+!LICENSE*
 !deny.toml
 !.github/
 !.github/**

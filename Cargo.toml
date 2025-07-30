@@ -1,15 +1,16 @@
 [package]
 name = "memfd-runner"
 version = "0.1.0"
-edition = "2024"
-authors = ["toto"]
-description = "A Linux library for executing in-memory ELF files using memfd_create and execve"
-license = "MIT"
-repository = "https://github.com/mathyslv/memfd-runner"
-homepage = "https://github.com/mathyslv/memfd-runner"
-documentation = "https://docs.rs/memfd-runner"
-keywords = ["memfd", "elf", "linux", "execution", "memory"]
+
+authors = ["mathyslv <mathys.lv@hotmail.com>"]
 categories = ["os::linux-apis", "development-tools"]
+description = "A Linux library for executing in-memory ELF files using memfd_create and execve"
+documentation = "https://docs.rs/memfd-runner"
+edition = "2024"
+homepage = "https://github.com/mathyslv/memfd-runner"
+keywords = ["memfd", "elf", "linux", "execution", "memory"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/mathyslv/memfd-runner"
 rust-version = "1.85.1"
 
 [profile.release]

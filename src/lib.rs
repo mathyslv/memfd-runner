@@ -354,6 +354,8 @@ fn prepare_argv(fd: u16, options: &RunOptions<'_>) -> Result<PreparedArgs, RunEr
             return Err(RunError::TooManyArgs);
         }
 
+        let mut arg_count = 1;
+
         for &arg in user_args.iter() {
             let arg_bytes = arg.as_bytes();
             if arg_bytes.len() >= MAX_STRING_LEN {
