@@ -1,0 +1,22 @@
+[package]
+name = "memfd-runner"
+version = "0.1.0"
+edition = "2024"
+authors = ["toto"]
+description = "A Linux library for executing in-memory ELF files using memfd_create and execve"
+license = "MIT"
+repository = "https://github.com/mathyslv/memfd-runner"
+homepage = "https://github.com/mathyslv/memfd-runner"
+documentation = "https://docs.rs/memfd-runner"
+keywords = ["memfd", "elf", "linux", "execution", "memory"]
+categories = ["os::linux-apis", "development-tools"]
+rust-version = "1.85.1"
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+
+[dependencies]
+syscaller = { path = "../syscaller/syscaller", features = ["macro"] }
