@@ -41,6 +41,8 @@ dependencies = [
 [[package]]
 name = "syscaller"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c872b6b39cfed6e40b1c68956ac7aadbc520c96900738e4a4c095b7eedfd948"
 dependencies = [
  "syscaller-wrap-macro",
 ]
@@ -48,6 +50,8 @@ dependencies = [
 [[package]]
 name = "syscaller-wrap-macro"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7f2df37d7d165c81a97ef43a034ae3720c928395f837c21cee3ad4b9b24476c"
 dependencies = [
  "proc-macro2",
  "quote",

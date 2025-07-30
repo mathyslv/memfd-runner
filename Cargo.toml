@@ -20,4 +20,4 @@ lto = true
 codegen-units = 1
 
 [dependencies]
-syscaller = { path = "../syscaller/syscaller", features = ["macro"] }
+syscaller = { version = "0.1.0", features = ["macro"] }
