@@ -24,14 +24,14 @@ memfd-runner provides a simple interface to load and execute ELF binaries direct
 ## Installation
 
 ```sh
-cargo add mdmfd-runner
+cargo add memfd-runner
 ```
 
 Or add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-memfd-runner = "0.1.0"
+memfd-runner = "0.1.1"
 ```
 
 ## Quick Start
@@ -109,9 +109,7 @@ match run(invalid_data) {
 
 ## Examples
 
-See the [`examples/`](examples/) directory for complete examples:
-
-- [`example.rs`](examples/example.rs) - Basic usage demonstration
+For complete usage examples, see the documentation at [docs.rs/memfd-runner](https://docs.rs/memfd-runner).
 
 ## Development
 
@@ -147,6 +145,11 @@ cargo clippy
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Changelog
+
+### 0.1.1
+- Fixed dependency issues
+- Updated documentation
+- Ready for crates.io publication
 
 ### 0.1.0
 - Initial release
