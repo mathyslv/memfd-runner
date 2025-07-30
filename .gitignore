@@ -4,6 +4,7 @@
 !tests/
 !tests/**
 !LICENSE.md
+!deny.toml
 !.github/
 !.github/**
 !.gitignore
