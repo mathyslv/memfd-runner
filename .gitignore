@@ -1,0 +1,16 @@
+*
+!examples/
+!examples/**
+!tests/
+!tests/**
+!LICENSE*
+!deny.toml
+!.github/
+!.github/**
+!.gitignore
+!Cargo.toml
+!Cargo.lock
+!README.md
+!CHANGELOG.md
+!src/
+!src/**
