@@ -11,5 +11,6 @@
 !Cargo.toml
 !Cargo.lock
 !README.md
+!CHANGELOG.md
 !src/
 !src/**
