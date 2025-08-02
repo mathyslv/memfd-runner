@@ -1,4 +1,5 @@
-*
+/*
+/*/
 !examples/
 !examples/**
 !tests/
@@ -7,9 +8,12 @@
 !deny.toml
 !.github/
 !.github/**
+!.git/
+!.git/**
 !.gitignore
 !Cargo.toml
 !Cargo.lock
 !README.md
+!CHANGELOG.md
 !src/
 !src/**
