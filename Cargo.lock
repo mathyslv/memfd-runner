@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "memfd-runner"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "syscaller",
 ]
@@ -40,18 +40,18 @@ dependencies = [
 
 [[package]]
 name = "syscaller"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c872b6b39cfed6e40b1c68956ac7aadbc520c96900738e4a4c095b7eedfd948"
+checksum = "16d46e7ba32f91018dd9559c079d8bfaed3685438dd63d9399ae1f9603c5ddda"
 dependencies = [
  "syscaller-wrap-macro",
 ]
 
 [[package]]
 name = "syscaller-wrap-macro"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7f2df37d7d165c81a97ef43a034ae3720c928395f837c21cee3ad4b9b24476c"
+checksum = "3db5f21680f424ae5e662f061e944f5dd0bc464256c5db5e8a6ac947c1e8fdbd"
 dependencies = [
  "proc-macro2",
  "quote",
