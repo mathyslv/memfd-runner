@@ -7,6 +7,7 @@
 !LICENSE*
 !deny.toml
 !.github/
+!.git/
 !.github/**
 !.gitignore
 !Cargo.toml
