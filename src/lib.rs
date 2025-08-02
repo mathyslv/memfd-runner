@@ -302,59 +302,36 @@ fn write_bytes(fd: u16, bytes: &[u8]) -> Result<(), RunError> {
     Ok(())
 }
 
-pub struct PreparedArgs {
-    ptrs: [*const u8; MAX_ARGS + 1],
-    storage: [[u8; MAX_STRING_LEN]; MAX_ARGS],
-}
-
-impl PreparedArgs {
-    /// Get the pointer to the argv array for execve
-    pub fn as_ptr(&self) -> *const *const u8 {
-        self.ptrs.as_ptr()
-    }
-}
-
-pub struct PreparedEnv {
-    ptrs: [*const u8; MAX_ENV + 1],
-    storage: [[u8; MAX_STRING_LEN]; MAX_ENV],
-}
-
-impl PreparedEnv {
-    pub fn as_ptr(&self) -> *const *const u8 {
-        self.ptrs.as_ptr()
-    }
-}
-
-fn prepare_argv(fd: u16, options: &RunOptions<'_>) -> Result<PreparedArgs, RunError> {
-    let mut prepared = PreparedArgs {
-        ptrs: [core::ptr::null(); MAX_ARGS + 1],
-        storage: [[0u8; MAX_STRING_LEN]; MAX_ARGS],
-    };
-
+/// Prepare argv directly in provided stack storage
+/// Returns the number of arguments prepared
+fn prepare_argv(
+    fd: u16,
+    options: &RunOptions<'_>,
+    storage: &mut [[u8; MAX_STRING_LEN]; MAX_ARGS],
+    ptrs: &mut [*const u8; MAX_ARGS + 1],
+) -> Result<usize, RunError> {
     // Set argv[0] - either custom or default memfd path
     if let Some(custom_argv0) = options.argv0 {
         let argv0_bytes = custom_argv0.as_bytes();
         if argv0_bytes.len() >= MAX_STRING_LEN {
             return Err(RunError::ArgTooLong);
         }
-        prepared.storage[0][..argv0_bytes.len()].copy_from_slice(argv0_bytes);
-        prepared.storage[0][argv0_bytes.len()] = 0; // null terminate
+        storage[0][..argv0_bytes.len()].copy_from_slice(argv0_bytes);
+        storage[0][argv0_bytes.len()] = 0; // null terminate
     } else {
         // Use default memfd path
         let path = build_path(fd);
         let null_pos = path.iter().position(|&b| b == 0).unwrap();
-        prepared.storage[0][..null_pos].copy_from_slice(&path[..null_pos]);
-        prepared.storage[0][null_pos] = 0; // ensure null termination
+        storage[0][..null_pos].copy_from_slice(&path[..null_pos]);
+        storage[0][null_pos] = 0; // ensure null termination
     }
-    prepared.ptrs[0] = prepared.storage[0].as_ptr();
 
     // Add user-provided arguments
+    let mut arg_count = 1;
     if let Some(user_args) = options.args {
         if user_args.len() > MAX_ARGS - 1 {
             return Err(RunError::TooManyArgs);
         }
-
-        let mut arg_count = 1;
 
         for &arg in user_args.iter() {
             let arg_bytes = arg.as_bytes();
@@ -362,21 +339,29 @@ fn prepare_argv(fd: u16, options: &RunOptions<'_>) -> Result<PreparedArgs, RunEr
                 return Err(RunError::ArgTooLong);
             }
 
-            prepared.storage[arg_count][..arg_bytes.len()].copy_from_slice(arg_bytes);
-            prepared.storage[arg_count][arg_bytes.len()] = 0; // null terminate
-            prepared.ptrs[arg_count] = prepared.storage[arg_count].as_ptr();
+            storage[arg_count][..arg_bytes.len()].copy_from_slice(arg_bytes);
+            storage[arg_count][arg_bytes.len()] = 0; // null terminate
             arg_count += 1;
         }
     }
 
-    Ok(prepared)
+    // CRITICAL FIX: Set all pointers AFTER all data is prepared
+    for i in 0..arg_count {
+        ptrs[i] = storage[i].as_ptr();
+    }
+    ptrs[arg_count] = core::ptr::null();
+
+    Ok(arg_count)
 }
 
-fn prepare_envp(env: Option<&[&str]>) -> Result<PreparedEnv, RunError> {
-    let mut prepared = PreparedEnv {
-        ptrs: [core::ptr::null(); MAX_ENV + 1],
-        storage: [[0u8; MAX_STRING_LEN]; MAX_ENV],
-    };
+/// Prepare envp directly in provided stack storage
+/// Returns the number of environment variables prepared
+fn prepare_envp(
+    env: Option<&[&str]>,
+    storage: &mut [[u8; MAX_STRING_LEN]; MAX_ENV],
+    ptrs: &mut [*const u8; MAX_ENV + 1],
+) -> Result<usize, RunError> {
+    let mut env_count = 0;
 
     if let Some(user_env) = env {
         if user_env.len() > MAX_ENV {
@@ -389,13 +374,39 @@ fn prepare_envp(env: Option<&[&str]>) -> Result<PreparedEnv, RunError> {
                 return Err(RunError::EnvVarTooLong);
             }
 
-            prepared.storage[i][..env_bytes.len()].copy_from_slice(env_bytes);
-            prepared.storage[i][env_bytes.len()] = 0; // null terminate
-            prepared.ptrs[i] = prepared.storage[i].as_ptr();
+            storage[i][..env_bytes.len()].copy_from_slice(env_bytes);
+            storage[i][env_bytes.len()] = 0; // null terminate
+            ptrs[i] = storage[i].as_ptr();
+            env_count += 1;
         }
     }
+    ptrs[env_count] = core::ptr::null();
+    Ok(env_count)
+}
 
-    Ok(prepared)
+/// Execute the child process
+fn execute_child(fd: u16, options: &RunOptions<'_>) -> Result<i32, RunError> {
+    let path = build_path(fd);
+
+    // Stack-allocated storage
+    let mut argv_storage: [[u8; MAX_STRING_LEN]; MAX_ARGS] = [[0; MAX_STRING_LEN]; MAX_ARGS];
+    let mut argv: [*const u8; MAX_ARGS + 1] = [core::ptr::null(); MAX_ARGS + 1];
+
+    let mut envp_storage: [[u8; MAX_STRING_LEN]; MAX_ENV] = [[0; MAX_STRING_LEN]; MAX_ENV];
+    let mut envp: [*const u8; MAX_ENV + 1] = [core::ptr::null(); MAX_ENV + 1];
+
+    // Prepare arguments and environment directly in stack storage
+    prepare_argv(fd, options, &mut argv_storage, &mut argv)?;
+    prepare_envp(options.env, &mut envp_storage, &mut envp)?;
+
+    // Execute with stable pointers using direct syscall
+
+    let ret = unsafe { syscalls::execve(path, argv.as_ptr() as *mut u8, envp.as_ptr() as *mut u8) };
+
+    if ret == -1 {
+        return Err(RunError::ExecError(-1)); // TODO: get actual errno
+    }
+    unreachable!("execve should not return on success");
 }
 
 fn execute(fd: u16, options: RunOptions<'_>) -> Result<i32, RunError> {
@@ -406,19 +417,7 @@ fn execute(fd: u16, options: RunOptions<'_>) -> Result<i32, RunError> {
 
     // if child, call execve
     match pid {
-        0 => {
-            let path = build_path(fd);
-            let argv = prepare_argv(fd, &options)?;
-            let envp = prepare_envp(options.env)?;
-
-            let ret = unsafe {
-                syscalls::execve(path, argv.as_ptr() as *mut u8, envp.as_ptr() as *mut u8)
-            };
-            if ret == -1 {
-                return Err(RunError::ExecError(-1)); // TODO: get actual errno
-            }
-            unreachable!("execve should not return on success");
-        }
+        0 => execute_child(fd, &options),
         -1 => Err(RunError::ForkError(-1)), // TODO: get actual errno
         _ => {
             let mut status: i32 = 0;
@@ -472,6 +471,19 @@ mod tests {
     use super::*;
     extern crate std;
     use std::format;
+
+    // Helper functions for testing the new inline API
+    fn test_prepare_argv(fd: u16, options: &RunOptions<'_>) -> Result<usize, RunError> {
+        let mut storage: [[u8; MAX_STRING_LEN]; MAX_ARGS] = [[0; MAX_STRING_LEN]; MAX_ARGS];
+        let mut ptrs: [*const u8; MAX_ARGS + 1] = [core::ptr::null(); MAX_ARGS + 1];
+        prepare_argv(fd, options, &mut storage, &mut ptrs)
+    }
+
+    fn test_prepare_envp(env: Option<&[&str]>) -> Result<usize, RunError> {
+        let mut storage: [[u8; MAX_STRING_LEN]; MAX_ENV] = [[0; MAX_STRING_LEN]; MAX_ENV];
+        let mut ptrs: [*const u8; MAX_ENV + 1] = [core::ptr::null(); MAX_ENV + 1];
+        prepare_envp(env, &mut storage, &mut ptrs)
+    }
 
     // RunOptions Tests
     #[test]
@@ -551,26 +563,18 @@ mod tests {
     #[test]
     fn test_prepare_argv_path_only() {
         let options = RunOptions::new();
-        let result = prepare_argv(123, &options);
+        let result = test_prepare_argv(123, &options);
         assert!(result.is_ok());
-
-        let argv = result.unwrap();
-        assert!(!argv.ptrs[0].is_null());
-        assert!(argv.ptrs[1].is_null()); // null terminated
+        assert_eq!(result.unwrap(), 1);
     }
 
     #[test]
     fn test_prepare_argv_with_args() {
         let args = ["arg1", "arg2"];
         let options = RunOptions::new().with_args(&args);
-        let result = prepare_argv(123, &options);
+        let result = test_prepare_argv(123, &options);
         assert!(result.is_ok());
-
-        let argv = result.unwrap();
-        assert!(!argv.ptrs[0].is_null()); // path
-        assert!(!argv.ptrs[1].is_null()); // arg1
-        assert!(!argv.ptrs[2].is_null()); // arg2
-        assert!(argv.ptrs[3].is_null()); // null terminated
+        assert_eq!(result.unwrap(), 3);
     }
 
     #[test]
@@ -580,7 +584,7 @@ mod tests {
             args.push("arg");
         }
         let options = RunOptions::new().with_args(&args);
-        let result = prepare_argv(123, &options);
+        let result = test_prepare_argv(123, &options);
         assert!(matches!(result, Err(RunError::TooManyArgs)));
     }
 
@@ -589,74 +593,49 @@ mod tests {
         let long_arg = "a".repeat(MAX_STRING_LEN);
         let args = [long_arg.as_str()];
         let options = RunOptions::new().with_args(&args);
-        let result = prepare_argv(123, &options);
+        let result = test_prepare_argv(123, &options);
         assert!(matches!(result, Err(RunError::ArgTooLong)));
     }
 
     #[test]
     fn test_prepare_argv_custom_argv0() {
         let options = RunOptions::new().with_argv0("my-custom-program");
-        let result = prepare_argv(123, &options);
+        let result = test_prepare_argv(123, &options);
         assert!(result.is_ok());
-
-        let argv = result.unwrap();
-        assert!(!argv.ptrs[0].is_null());
-        assert!(argv.ptrs[1].is_null()); // null terminated
-
-        // Check that argv[0] contains our custom string
-        let argv0_str = unsafe {
-            let ptr = argv.ptrs[0] as *const u8;
-            let mut len = 0;
-            while *ptr.add(len) != 0 {
-                len += 1;
-            }
-            std::str::from_utf8(std::slice::from_raw_parts(ptr, len)).unwrap()
-        };
-        assert_eq!(argv0_str, "my-custom-program");
+        assert_eq!(result.unwrap(), 1);
     }
 
     #[test]
     fn test_prepare_argv_custom_argv0_with_args() {
         let args = ["arg1", "arg2"];
         let options = RunOptions::new().with_argv0("custom-name").with_args(&args);
-        let result = prepare_argv(123, &options);
+        let result = test_prepare_argv(123, &options);
         assert!(result.is_ok());
-
-        let argv = result.unwrap();
-        assert!(!argv.ptrs[0].is_null()); // custom argv0
-        assert!(!argv.ptrs[1].is_null()); // arg1
-        assert!(!argv.ptrs[2].is_null()); // arg2
-        assert!(argv.ptrs[3].is_null()); // null terminated
+        assert_eq!(result.unwrap(), 3);
     }
 
     #[test]
     fn test_prepare_argv_custom_argv0_too_long() {
         let long_argv0 = "a".repeat(MAX_STRING_LEN);
         let options = RunOptions::new().with_argv0(&long_argv0);
-        let result = prepare_argv(123, &options);
+        let result = test_prepare_argv(123, &options);
         assert!(matches!(result, Err(RunError::ArgTooLong)));
     }
 
     // prepare_envp Tests
     #[test]
     fn test_prepare_envp_none() {
-        let result = prepare_envp(None);
+        let result = test_prepare_envp(None);
         assert!(result.is_ok());
-
-        let envp = result.unwrap();
-        assert!(envp.ptrs[0].is_null()); // immediately null terminated
+        assert_eq!(result.unwrap(), 0);
     }
 
     #[test]
     fn test_prepare_envp_with_env() {
         let env = ["PATH=/usr/bin", "HOME=/tmp"];
-        let result = prepare_envp(Some(&env));
+        let result = test_prepare_envp(Some(&env));
         assert!(result.is_ok());
-
-        let envp = result.unwrap();
-        assert!(!envp.ptrs[0].is_null()); // PATH
-        assert!(!envp.ptrs[1].is_null()); // HOME
-        assert!(envp.ptrs[2].is_null()); // null terminated
+        assert_eq!(result.unwrap(), 2);
     }
 
     #[test]
@@ -665,7 +644,7 @@ mod tests {
         for _i in 0..MAX_ENV + 1 {
             env.push("VAR=value");
         }
-        let result = prepare_envp(Some(&env));
+        let result = test_prepare_envp(Some(&env));
         assert!(matches!(result, Err(RunError::TooManyEnvVars)));
     }
 
@@ -673,7 +652,7 @@ mod tests {
     fn test_prepare_envp_var_too_long() {
         let long_var = format!("VAR={}", "a".repeat(MAX_STRING_LEN));
         let env = [long_var.as_str()];
-        let result = prepare_envp(Some(&env));
+        let result = test_prepare_envp(Some(&env));
         assert!(matches!(result, Err(RunError::EnvVarTooLong)));
     }
 

@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/memfd-runner.svg)](https://crates.io/crates/memfd-runner)
 [![Documentation](https://docs.rs/memfd-runner/badge.svg)](https://docs.rs/memfd-runner)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/mathyslv/memfd-runner)
 
 A minimal Linux library for executing in-memory ELF files using `memfd_create` and `execve`.
 
@@ -14,7 +14,11 @@ memfd-runner provides a simple interface to load and execute ELF binaries direct
 
 - **Minimal** - <400 lines of code, 1 dependency ([syscaller](https://github.com/mathyslv/syscaller))
 - **Two execution modes** - fork child process or replace current process
-- **`no_std`** - works in embedded and kernel environments  
+- **Command line arguments** - pass custom arguments to executed programs
+- **Environment variables** - set custom environment for executed programs
+- **Custom argv[0]** - control how the program sees its own name
+- **`no_std`** - works in embedded and kernel environments
+- **Basic ELF validation** - validates magic bytes and minimum size
 
 ## Platform Support
 
@@ -61,6 +65,45 @@ let options = RunOptions::new().with_replace(true);
 run_with_options(&elf_bytes, options).unwrap();
 ```
 
+### Passing Arguments
+
+```rust
+use memfd_runner::{run_with_options, RunOptions};
+
+let elf_bytes = std::fs::read("/usr/bin/echo").unwrap();
+let options = RunOptions::new()
+    .with_args(&["Hello", "World!"]);  // Just the arguments, not the program name
+
+let exit_code = run_with_options(&elf_bytes, options).unwrap();
+// Executes: /proc/self/fd/X "Hello" "World!"
+```
+
+### Custom Program Name (argv[0])
+
+```rust
+use memfd_runner::{run_with_options, RunOptions};
+
+let elf_bytes = std::fs::read("/usr/bin/echo").unwrap();
+let options = RunOptions::new()
+    .with_argv0("my-echo")  // Custom program name
+    .with_args(&["Hello", "World!"]);
+
+let exit_code = run_with_options(&elf_bytes, options).unwrap();
+// The program sees argv[0] as "my-echo" instead of "/proc/self/fd/X"
+```
+
+### Environment Variables
+
+```rust
+use memfd_runner::{run_with_options, RunOptions};
+
+let elf_bytes = std::fs::read("/usr/bin/env").unwrap();
+let options = RunOptions::new()
+    .with_env(&["PATH=/usr/bin", "HOME=/tmp"]);
+
+let exit_code = run_with_options(&elf_bytes, options).unwrap();
+```
+
 ### Error Handling
 
 ```rust
@@ -70,7 +113,9 @@ let invalid_data = b"not an elf file";
 match run(invalid_data) {
     Ok(exit_code) => println!("Success: {}", exit_code),
     Err(RunError::InvalidElfFormat) => println!("Invalid ELF format"),
-    ...
+    Err(RunError::FdCreationFailed(errno)) => println!("Failed to create memfd: {}", errno),
+    Err(RunError::TooManyArgs) => println!("Too many arguments provided"),
+    Err(e) => println!("Other error: {:?}", e),
 }
 ```
 
@@ -89,6 +134,9 @@ match run(invalid_data) {
 - **`RunOptions`** - Configuration for execution
   - `new()` - Create default options (fork mode)
   - `with_replace(bool)` - Set replace mode (true = replace process, false = fork child)
+  - `with_args(&[&str])` - Set command line arguments (max 32 args, 256 chars each)
+  - `with_env(&[&str])` - Set environment variables (max 64 vars, 256 chars each)
+  - `with_argv0(&str)` - Set custom program name (argv[0])
 
 - **`RunError`** - Error types with context
   - `FdCreationFailed(i32)` - Failed to create memory file descriptor
@@ -97,19 +145,27 @@ match run(invalid_data) {
   - `ForkError(i32)` - fork system call failed  
   - `WaitError(i32)` - wait4 system call failed
   - `InvalidElfFormat` - ELF validation failed
+  - `TooManyArgs` - Too many command line arguments (limit: 32)
+  - `TooManyEnvVars` - Too many environment variables (limit: 64)
+  - `ArgTooLong` - Command line argument too long (limit: 256 chars)
+  - `EnvVarTooLong` - Environment variable too long (limit: 256 chars)
 
 ## How It Works
 
-1. **Create Memory FD**: Uses `memfd_create()` to create an anonymous file in memory
+1. **Validate ELF**: Checks magic bytes (0x7f, 'E', 'L', 'F') and minimum size
+2. **Create Memory FD**: Uses `memfd_create()` to create an anonymous file in memory
 3. **Write Data**: Writes the ELF bytes to the memory file descriptor
-4. **Execute**: Uses `execve()` with `/proc/self/fd/<fd>` path to execute the in-memory file
-5. **Wait for Child**: In fork mode, waits for child process and returns exit code
+4. **Prepare Arguments**: Builds argv and envp arrays with provided options
+5. **Execute**: Uses `execve()` with `/proc/self/fd/<fd>` path to execute the in-memory file
+6. **Wait for Child**: In fork mode, waits for child process and returns exit code
 
-⚠️ **Limitations**: Very basic ELF validation only - complex validation should be done by caller
+## Limitations
 
-## Examples
-
-For complete usage examples, see the documentation at [docs.rs/memfd-runner](https://docs.rs/memfd-runner).
+- **Linux-specific** - requires `memfd_create` system call (Linux 3.17+)
+- **Maximum 32 command line arguments** (256 characters each)
+- **Maximum 64 environment variables** (256 characters each)  
+- **Basic ELF validation only** - validates magic bytes and minimum size
+- **No complex ELF features** - no support for dynamic linking validation
 
 ## Development
 
@@ -138,22 +194,9 @@ cargo clippy
 2. Create a feature branch
 3. Make your changes
 4. Add tests if applicable
-5. Submit a pull request
+5. Run `cargo test` and `cargo clippy`
+6. Submit a pull request
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Changelog
-
-### 0.1.1
-- Fixed dependency issues
-- Updated documentation
-- Ready for crates.io publication
-
-### 0.1.0
-- Initial release
-- Basic memfd_create + execve functionality
-- Fork and replace execution modes
-- ELF validation
-- Comprehensive error handling
+This project is dual-licensed under the MIT OR Apache-2.0 license. See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE) files for details.
