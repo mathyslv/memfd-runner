@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3](https://github.com/mathyslv/memfd-runner/compare/v0.2.2...v0.2.3) - 2025-09-03
+
+### Other
+
+- *(deps)* update release-plz/action digest to f4facd4 ([#13](https://github.com/mathyslv/memfd-runner/pull/13))
+- *(deps)* update actions/checkout action to v5
+- *(deps)* update actions/checkout digest to 08eba0b ([#10](https://github.com/mathyslv/memfd-runner/pull/10))
+- *(deps)* update release-plz/action digest to f9715bc
+
 ## [0.2.2](https://github.com/mathyslv/memfd-runner/compare/v0.2.1...v0.2.2) - 2025-08-02
 
 ### Other

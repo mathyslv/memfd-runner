@@ -1,6 +1,6 @@
 [package]
 name = "memfd-runner"
-version = "0.2.2"
+version = "0.2.3"
 
 authors = ["mathyslv <mathys.lv@hotmail.com>"]
 categories = ["os::linux-apis", "development-tools"]
